@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
+  <title>Luna Shakey Demo v1</title>
+  <style>
+    html, body { height:100%; margin:0; background:#fff; overflow:hidden;
+      -webkit-user-select:none; user-select:none; touch-action:manipulation;
+      font-family:system-ui, -apple-system, 'PingFang TC','Noto Sans CJK TC','Microsoft JhengHei',sans-serif;}
+    .stage { position:relative; width:100vw; height:100vh;}
+    .layer { position:absolute; left:50%; top:12vh; width:min(78vw, 620px);
+      transform:translate(-50%,0); transform-origin:50% 0%; filter: drop-shadow(0 18px 18px rgba(0,0,0,.15)); }
+    .rope { top:6vh; width:min(78vw, 620px); filter:none; }
+    .hud { position:absolute; top:1rem; left:1rem; right:1rem; display:flex; justify-content:space-between; gap:.6rem;}
+    .btn { padding:.55rem .9rem; border:0; border-radius:10px; color:#fff; background:#111; font-size:13px;}
+    .btn.secondary { background:#666;}
+    .badge { padding:.45rem .7rem; border-radius:999px; background:#eee; color:#333; font-size:12px;}
+    .hint { position:absolute; bottom:1rem; left:0; right:0; text-align:center; color:#666; font-size:13px;}
+    .shadow { position:absolute; left:50%; bottom:14vh; width:min(40vw, 300px); height:18px; transform:translate(-50%,0);
+      filter: blur(8px); background: radial-gradient(ellipse at center, rgba(0,0,0,.18), rgba(0,0,0,0) 70%); }
+  </style>
+</head>
+<body>
+  <div class="stage" id="stage">
+    <div class="hud">
+      <div class="badge" id="badge">模式：滑鼠｜慣性：繩 0.7 / 本體 1.0 / 吊墜 1.2</div>
+      <div style="display:flex; gap:.6rem;">
+        <button class="btn secondary" id="mouseBtn">滑鼠模式</button>
+        <button class="btn" id="permBtn" style="display:none;">啟用感應器</button>
+      </div>
+    </div>
+
+    <img class="layer rope"   id="rope"   src="./assets/rope.png"   alt="rope"/>
+    <img class="layer body"   id="body"   src="./assets/charm.png"  alt="charm"/>
+    <img class="layer tassel" id="tassel" src="./assets/tassel.png" alt="tassel"/>
+    <div class="shadow" id="shadow"></div>
+
+    <div class="hint" id="hint">移動滑鼠或傾斜手機可搖晃；點一下會彈跳～</div>
+  </div>
+
+<script>
+(function(){
+  const rope   = document.getElementById('rope');
+  const body   = document.getElementById('body');
+  const tassel = document.getElementById('tassel');
+  const shadow = document.getElementById('shadow');
+  const permBtn = document.getElementById('permBtn');
+  const mouseBtn = document.getElementById('mouseBtn');
+  const badge = document.getElementById('badge');
+  const hint  = document.getElementById('hint');
+
+  let targetX=0, targetY=0, posX=0, posY=0, velX=0, velY=0;
+  const maxOffset=36, maxTiltDeg=12, stiffness=0.055, damping=0.12;
+
+  let rx=0, ry=0, bx=0, by=0, tx=0, ty=0;
+  const ropeLag=0.70, bodyLag=0.88, tasselLag=1.20;
+
+  function updateMain(){
+    const ax=(targetX-posX)*stiffness, ay=(targetY-posY)*stiffness;
+    velX=(velX+ax)*(1-damping); velY=(velY+ay)*(1-damping);
+    posX+=velX; posY+=velY;
+  }
+  function follow(cur, tgt, lag){ return cur + (tgt - cur) * (1 - Math.min(0.95, Math.max(0.0, lag))); }
+
+  function render(){
+    bx = follow(bx, posX*bodyLag, 0.35);
+    by = follow(by, posY*bodyLag, 0.35);
+    const rotB = (bx/maxOffset)*maxTiltDeg;
+    body.style.transform = `translate(-50%, ${by.toFixed(1)}px) rotate(${rotB.toFixed(2)}deg)`;
+
+    rx = follow(rx, posX*ropeLag, 0.7);
+    ry = follow(ry, posY*0.4*ropeLag, 0.7);
+    const rotR = (rx/maxOffset)*(maxTiltDeg*0.7);
+    rope.style.transform = `translate(-50%, ${ry.toFixed(1)}px) rotate(${rotR.toFixed(2)}deg)`;
+
+    tx = follow(tx, posX*tasselLag, 0.25);
+    ty = follow(ty, posY*tasselLag + 10, 0.25);
+    const rotT = (tx/maxOffset)*(maxTiltDeg*1.15);
+    tassel.style.transform = `translate(-50%, ${ty.toFixed(1)}px) rotate(${rotT.toFixed(2)}deg)`;
+
+    const squash = 1 - Math.min(0.5, Math.abs(by)/(maxOffset*1.3));
+    shadow.style.transform = `translate(-50%,0) scaleX(${(0.8+squash*0.4).toFixed(2)})`;
+    shadow.style.opacity = (0.6 - Math.abs(by)/(maxOffset*2)).toFixed(2);
+  }
+
+  function tick(){ updateMain(); render(); requestAnimationFrame(tick); }
+
+  // mouse
+  window.addEventListener('mousemove', e=>{
+    const nx=(e.clientX/window.innerWidth)*2-1, ny=(e.clientY/window.innerHeight)*2-1;
+    targetX = nx*maxOffset; targetY = ny*maxOffset;
+  });
+  window.addEventListener('mouseleave', ()=>{ targetX=0; targetY=0; });
+
+  // click bounce
+  window.addEventListener('pointerdown', ()=>{
+    velY -= 7; velX += (Math.random()*2-1)*4;
+  });
+
+  // motion
+  function startMotion(){
+    window.addEventListener('deviceorientation', e=>{
+      if (!motionOn) return;
+      const beta=e.beta||0, gamma=e.gamma||0;
+      const nx=Math.max(-45,Math.min(45,gamma))/45;
+      const ny=Math.max(-45,Math.min(45,beta))/45;
+      targetX = nx*maxOffset; targetY = ny*maxOffset;
+    }, true);
+  }
+  let motionOn=false;
+  function setupPermissionIfNeeded(){
+    const needPerm = typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function';
+    if (needPerm){
+      permBtn.style.display='inline-block';
+      hint.textContent='iPhone：點「啟用感應器」授權；也可直接用滑鼠模式。';
+      permBtn.addEventListener('click', async()=>{
+        try{
+          const s1=await DeviceMotionEvent.requestPermission();
+          let s2='granted';
+          if (typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+            s2=await DeviceOrientationEvent.requestPermission();
+          }
+          if (s1==='granted' && s2==='granted'){
+            motionOn=true; permBtn.style.display='none';
+            badge.textContent='模式：感應器｜慣性：繩 0.7 / 本體 1.0 / 吊墜 1.2';
+            hint.textContent='已啟用：傾斜或輕搖手機～';
+          } else {
+            hint.textContent='未授權感應器，維持滑鼠模式。';
+          }
+        }catch(e){ hint.textContent='授權失敗，維持滑鼠模式。'; }
+      }, {once:true});
+    }
+  }
+  document.getElementById('mouseBtn').addEventListener('click', ()=>{
+    motionOn=false;
+    badge.textContent='模式：滑鼠｜慣性：繩 0.7 / 本體 1.0 / 吊墜 1.2';
+    hint.textContent='滑鼠模式：移動滑鼠或點擊彈跳～';
+  });
+
+  startMotion(); setupPermissionIfNeeded(); tick();
+})();
+</script>
+</body>
+</html>
